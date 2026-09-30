@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoDocs Assistant</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 16px; line-height: 1.5; }
+  h1 { font-size: 1.4rem; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  input[type=text] { flex: 1; min-width: 200px; padding: 10px; font-size: 1rem; }
+  button, select { padding: 10px 14px; font-size: 1rem; }
+  #status { color: #666; min-height: 1.4em; }
+  #answer { white-space: pre-wrap; background: #f5f5f5; padding: 12px; border-radius: 8px; margin: 8px 0; }
+  #answer:empty { display: none; }
+  .src { font-size: .9rem; color: #444; margin: 4px 0; }
+  #map { height: 320px; border-radius: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>GeoDocs Assistant</h1>
+<div class="row">
+  <input type="file" id="file" accept=".pdf">
+  <button id="upload">Ingest PDF</button>
+</div>
+<div class="row">
+  <input type="text" id="q" placeholder="Ask about your documents...">
+  <select id="mode">
+    <option value="hybrid_rerank">hybrid + rerank</option>
+    <option value="hybrid">hybrid</option>
+    <option value="dense">dense</option>
+  </select>
+  <button id="ask">Ask</button>
+</div>
+<div id="status"></div>
+<div id="answer"></div>
+<div id="sources"></div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const map = L.map('map').setView([20, 0], 2);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+const markers = L.layerGroup().addTo(map);
+
+const setStatus = (t) => { $('status').textContent = t; };
+const postJson = (url, body) => fetch(url, {
+  method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+});
+
+function renderSources(sources) {
+  const box = $('sources');
+  box.replaceChildren();
+  sources.forEach((s) => {
+    const d = document.createElement('div');
+    d.className = 'src';
+    d.textContent = `[${s.id}] ${s.source}, p.${s.page}, ${s.heading}`;
+    box.appendChild(d);
+  });
+}
+
+async function plot(text) {
+  const res = await postJson('/places', {text});
+  if (!res.ok) return;
+  const {places} = await res.json();
+  const pts = places.map((p) => {
+    const el = document.createElement('div');
+    el.textContent = p.name;  // textContent: place names come from an LLM
+    L.marker([p.lat, p.lon]).bindPopup(el).addTo(markers);
+    return [p.lat, p.lon];
+  });
+  if (pts.length) map.fitBounds(pts, {maxZoom: 8, padding: [30, 30]});
+}
+
+async function ask() {
+  const question = $('q').value.trim();
+  if (question.length < 3) return;
+  setStatus('Thinking...');
+  markers.clearLayers();
+  try {
+    const res = await postJson('/query', {question, mode: $('mode').value});
+    if (!res.ok) { setStatus(`Error ${res.status}`); return; }
+    const data = await res.json();
+    $('answer').textContent = data.answer;
+    renderSources(data.sources);
+    if (data.sources.length) { setStatus('Locating places...'); await plot(data.answer); }
+    setStatus('');
+  } catch (e) {
+    setStatus('Request failed');
+  }
+}
+
+async function upload() {
+  const file = $('file').files[0];
+  if (!file) return;
+  setStatus('Ingesting...');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/ingest', {method: 'POST', body: fd});
+    const d = await res.json();
+    setStatus(res.ok ? `Ingested ${d.chunks} chunks from ${d.source}` : 'Upload failed');
+  } catch (e) {
+    setStatus('Upload failed');
+  }
+}
+
+$('ask').addEventListener('click', ask);
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+$('upload').addEventListener('click', upload);
+</script>
+</body>
+</html>

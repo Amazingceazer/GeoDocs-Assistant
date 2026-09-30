@@ -1,0 +1,2 @@
+{"question": "What return period is used for the 100-year flood map?", "expected_source": "flood_report.pdf", "expected_pages": [12, 13], "answerable": true}
+{"question": "Who won the 2018 World Cup?", "expected_source": null, "expected_pages": [], "answerable": false}

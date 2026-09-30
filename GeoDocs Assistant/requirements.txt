@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+pymupdf
+qdrant-client
+sentence-transformers
+python-multipart
+anthropic
+fastembed
+httpx
