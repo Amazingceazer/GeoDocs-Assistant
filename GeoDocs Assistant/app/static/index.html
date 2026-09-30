@@ -1,117 +1,451 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GeoDocs Assistant</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 16px; line-height: 1.5; }
-  h1 { font-size: 1.4rem; margin: 0 0 12px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  input[type=text] { flex: 1; min-width: 200px; padding: 10px; font-size: 1rem; }
-  button, select { padding: 10px 14px; font-size: 1rem; }
-  #status { color: #666; min-height: 1.4em; }
-  #answer { white-space: pre-wrap; background: #f5f5f5; padding: 12px; border-radius: 8px; margin: 8px 0; }
-  #answer:empty { display: none; }
-  .src { font-size: .9rem; color: #444; margin: 4px 0; }
-  #map { height: 320px; border-radius: 8px; margin-top: 12px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7f6">
+  <meta name="description" content="Ask geospatial reports questions and review cited evidence with geographic context.">
+  <title>GeoDocs Assistant</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #183336;
+      --muted: #65797a;
+      --muted-light: #879795;
+      --line: #dce6e3;
+      --surface: #ffffff;
+      --canvas: #f4f7f6;
+      --accent: #137568;
+      --accent-dark: #0e5f55;
+      --accent-soft: #e8f3ef;
+      --gold: #c68c4b;
+      --shadow: 0 14px 38px rgba(22, 54, 53, .055);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); }
+    button, input, textarea, select { font: inherit; }
+    button, select { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible, label:focus-within {
+      outline: 3px solid rgba(19, 117, 104, .24);
+      outline-offset: 2px;
+    }
+    .page { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
+
+    .topbar {
+      height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: inline-flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+    .brand-mark {
+      width: 40px; height: 40px; display: grid; place-items: center;
+      color: #fff; background: var(--ink); border-radius: 13px;
+    }
+    .brand-mark svg { width: 23px; height: 23px; }
+    .brand-name { display: block; font-size: 16px; font-weight: 730; letter-spacing: -.035em; }
+    .brand-caption { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; font-weight: 720; letter-spacing: .15em; }
+    .topbar-tools { display: flex; align-items: center; gap: 22px; }
+    .service-status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #d5a04d; box-shadow: 0 0 0 3px rgba(213, 160, 77, .14); }
+    .service-status.online .status-dot { background: #39a17c; box-shadow: 0 0 0 3px rgba(57, 161, 124, .13); }
+    .service-status.offline .status-dot { background: #c66f62; box-shadow: 0 0 0 3px rgba(198, 111, 98, .13); }
+    .api-link { color: var(--muted); font-size: 12px; font-weight: 620; text-decoration: none; }
+    .api-link:hover { color: var(--accent); }
+
+    .hero { padding: 46px 0 30px; }
+    .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 13px; color: var(--accent); font-size: 10px; font-weight: 760; letter-spacing: .14em; text-transform: uppercase; }
+    .eyebrow::before { width: 19px; height: 1px; background: var(--gold); content: ""; }
+    h1 { max-width: 760px; margin: 0; font-size: clamp(29px, 4vw, 43px); line-height: 1.13; letter-spacing: -.052em; font-weight: 690; }
+    .hero-copy { max-width: 680px; margin: 13px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.03fr) minmax(380px, .97fr); align-items: start; gap: 20px; padding-bottom: 46px; }
+    .work-column { display: grid; gap: 16px; min-width: 0; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+    .workflow-card { padding: 21px 22px 22px; }
+    .card-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+    .step-number { display: grid; flex: 0 0 30px; height: 30px; place-items: center; border: 1px solid #d6e6e1; border-radius: 10px; background: var(--accent-soft); color: var(--accent-dark); font-size: 11px; font-weight: 740; }
+    .card-title { margin: 1px 0 3px; font-size: 14px; line-height: 1.3; font-weight: 720; letter-spacing: -.01em; }
+    .card-description { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .format-tag { margin-left: auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+
+    .upload-zone {
+      min-height: 78px; display: flex; align-items: center; gap: 13px; padding: 13px 14px;
+      border: 1px dashed #bfd2cd; border-radius: 11px; background: #fbfdfc; cursor: pointer;
+      transition: border-color .18s ease, background .18s ease;
+    }
+    .upload-zone:hover, .upload-zone.has-file { border-color: var(--accent); background: #f5faf8; }
+    .upload-icon { width: 38px; height: 38px; display: grid; flex: 0 0 38px; place-items: center; border: 1px solid #e1eae7; border-radius: 10px; background: #fff; color: var(--accent); }
+    .upload-icon svg { width: 19px; height: 19px; }
+    .upload-copy { min-width: 0; flex: 1; }
+    .upload-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .upload-copy span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .browse-label { padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-size: 11px; font-weight: 660; white-space: nowrap; }
+    .upload-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; }
+    .helper-text { color: var(--muted-light); font-size: 10px; line-height: 1.5; }
+    .button-primary {
+      min-height: 37px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 0 14px; border: 0; border-radius: 9px; background: var(--accent); color: #fff;
+      font-size: 11px; font-weight: 700; transition: background .18s ease, transform .18s ease;
+    }
+    .button-primary:hover:not(:disabled) { transform: translateY(-1px); background: var(--accent-dark); }
+    .button-primary:disabled { cursor: wait; opacity: .65; }
+    .button-primary svg { width: 14px; height: 14px; }
+    .inline-status { min-height: 16px; margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+    .inline-status.error { color: #a7483e; }
+    .inline-status.success { color: var(--accent-dark); }
+
+    .question-card { padding-bottom: 18px; }
+    .question-input {
+      width: 100%; min-height: 91px; resize: vertical; display: block; padding: 13px 14px;
+      border: 1px solid var(--line); border-radius: 10px; background: #fcfdfd; color: var(--ink);
+      font-size: 13px; line-height: 1.55; transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    .question-input::placeholder { color: #9aa9a6; }
+    .question-input:focus { border-color: #85b6a9; box-shadow: 0 0 0 3px rgba(19, 117, 104, .08); outline: none; }
+    .query-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+    .mode-control { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .mode-select { max-width: 180px; padding: 8px 29px 8px 10px; border: 1px solid var(--line); border-radius: 8px; background-color: #fff; color: var(--ink); font-size: 11px; }
+    .ask-button { min-height: 38px; padding: 0 15px; }
+    .query-status { min-height: 16px; margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+
+    .answer-card { padding: 20px 22px; }
+    .answer-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .answer-heading { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 730; }
+    .answer-mark { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+    .answer-mark svg { width: 12px; height: 12px; }
+    .grounded-tag { color: var(--accent-dark); font-size: 10px; font-weight: 690; }
+    .answer-text { margin: 0; color: #344e4e; font-size: 13px; line-height: 1.75; white-space: pre-wrap; }
+    .source-heading { margin: 17px 0 8px; padding-top: 13px; border-top: 1px solid #edf1ef; color: var(--muted); font-size: 10px; font-weight: 740; letter-spacing: .1em; text-transform: uppercase; }
+    .source-list { display: grid; gap: 7px; }
+    .source-item { padding: 10px 11px; border: 1px solid #e6edeb; border-radius: 9px; background: #fbfdfc; }
+    .source-meta { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 11px; font-weight: 660; line-height: 1.4; }
+    .source-id { display: grid; flex: 0 0 19px; height: 19px; place-items: center; border-radius: 6px; background: var(--accent-soft); color: var(--accent-dark); font-size: 9px; font-weight: 760; }
+    .source-snippet { margin: 6px 0 0 27px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .empty-sources { margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+
+    .map-card { overflow: hidden; }
+    .map-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 21px 15px; }
+    .map-title { margin: 1px 0 4px; font-size: 14px; font-weight: 720; letter-spacing: -.01em; }
+    .map-description { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .map-icon { width: 34px; height: 34px; display: grid; flex: 0 0 34px; place-items: center; border: 1px solid #dce9e5; border-radius: 10px; background: #f5faf8; color: var(--accent); }
+    .map-icon svg { width: 18px; height: 18px; }
+    .map-frame { position: relative; height: 450px; margin: 0 12px; overflow: hidden; border: 1px solid #e0e9e6; border-radius: 11px; background: #e9f0ed; }
+    #map { position: absolute; inset: 0; z-index: 1; background: #e9f0ed; }
+    .map-empty {
+      position: absolute; z-index: 500; top: 50%; left: 50%; width: min(245px, calc(100% - 36px));
+      padding: 15px 16px; transform: translate(-50%, -50%); border: 1px solid rgba(220, 230, 227, .92);
+      border-radius: 12px; background: rgba(255, 255, 255, .94); box-shadow: 0 8px 26px rgba(22, 54, 53, .12);
+      text-align: center; pointer-events: none; backdrop-filter: blur(8px);
+    }
+    .map-empty[hidden] { display: none; }
+    .map-empty-pin { width: 29px; height: 29px; display: grid; place-items: center; margin: 0 auto 8px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+    .map-empty-pin svg { width: 16px; height: 16px; }
+    .map-empty strong { display: block; font-size: 11px; font-weight: 700; }
+    .map-empty span { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .map-status { min-height: 17px; margin: 11px 20px 0; color: var(--muted); font-size: 10px; }
+    .map-attribution { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px 16px; color: var(--muted-light); font-size: 9px; }
+    .map-attribution strong { color: var(--muted); font-weight: 650; }
+
+    .footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 24px; border-top: 1px solid var(--line); color: var(--muted-light); font-size: 10px; }
+    .footer-note { display: flex; align-items: center; gap: 7px; }
+    .footer-note svg { width: 13px; height: 13px; color: var(--accent); }
+
+    @media (max-width: 880px) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .map-column { grid-row: 1; }
+      .map-frame { height: 340px; }
+      .hero { padding-top: 36px; }
+    }
+    @media (max-width: 560px) {
+      .page { width: min(100% - 28px, 1180px); }
+      .topbar { height: 70px; }
+      .topbar-tools { gap: 12px; }
+      .service-status { font-size: 0; gap: 0; }
+      .status-dot { width: 8px; height: 8px; }
+      .hero { padding: 31px 0 23px; }
+      .hero-copy { font-size: 13px; }
+      .workspace { gap: 13px; padding-bottom: 32px; }
+      .work-column { gap: 13px; }
+      .workflow-card { padding: 17px 15px; }
+      .map-card-header { padding: 17px 15px 13px; }
+      .map-frame { height: 290px; margin: 0 9px; }
+      .map-attribution { padding: 11px 14px 14px; }
+      .upload-zone { gap: 9px; padding: 10px; }
+      .browse-label { padding: 8px; }
+      .upload-footer { align-items: flex-start; }
+      .helper-text { max-width: 145px; }
+      .mode-control { display: grid; gap: 5px; }
+      .mode-select { max-width: 155px; }
+      .ask-button { padding: 0 12px; }
+      .footer { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
 </head>
 <body>
-<h1>GeoDocs Assistant</h1>
-<div class="row">
-  <input type="file" id="file" accept=".pdf">
-  <button id="upload">Ingest PDF</button>
-</div>
-<div class="row">
-  <input type="text" id="q" placeholder="Ask about your documents...">
-  <select id="mode">
-    <option value="hybrid_rerank">hybrid + rerank</option>
-    <option value="hybrid">hybrid</option>
-    <option value="dense">dense</option>
-  </select>
-  <button id="ask">Ask</button>
-</div>
-<div id="status"></div>
-<div id="answer"></div>
-<div id="sources"></div>
-<div id="map"></div>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="GeoDocs Assistant home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.15 7-12a7 7 0 1 0-14 0c0 5.85 7 12 7 12Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="9" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M3 19.5c2.3-1.1 4.6-1.1 6.9 0s4.6 1.1 6.9 0 3.5-1.1 4.8-1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        <span><span class="brand-name">GeoDocs</span><span class="brand-caption">DOCUMENT INTELLIGENCE</span></span>
+      </a>
+      <div class="topbar-tools">
+        <span class="service-status" id="serviceStatus"><span class="status-dot" aria-hidden="true"></span><span id="serviceLabel">Checking service</span></span>
+        <a class="api-link" href="/docs">API docs <span aria-hidden="true">↗</span></a>
+      </div>
+    </header>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-const $ = (id) => document.getElementById(id);
-const map = L.map('map').setView([20, 0], 2);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
-const markers = L.layerGroup().addTo(map);
+    <section class="hero" aria-labelledby="pageTitle">
+      <p class="eyebrow">Geospatial report assistant</p>
+      <h1 id="pageTitle">Clear answers from complex reports.</h1>
+      <p class="hero-copy">Ask questions across your geospatial and disaster-risk documents. Review the cited passages, then see the places mentioned on a map.</p>
+    </section>
 
-const setStatus = (t) => { $('status').textContent = t; };
-const postJson = (url, body) => fetch(url, {
-  method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
-});
+    <main class="workspace">
+      <section class="work-column" aria-label="Document question workflow">
+        <section class="card workflow-card" aria-labelledby="uploadTitle">
+          <div class="card-heading">
+            <span class="step-number" aria-hidden="true">01</span>
+            <div><h2 class="card-title" id="uploadTitle">Add a report</h2><p class="card-description">Upload a PDF to make its contents searchable.</p></div>
+            <span class="format-tag">PDF</span>
+          </div>
+          <input type="file" id="file" accept=".pdf,application/pdf" hidden>
+          <label class="upload-zone" id="uploadZone" for="file">
+            <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M13.5 3.75H7A2.25 2.25 0 0 0 4.75 6v12A2.25 2.25 0 0 0 7 20.25h10A2.25 2.25 0 0 0 19.25 18V9.5l-5.75-5.75Z" stroke="currentColor" stroke-width="1.5"/><path d="M13 4v6h6M12 17v-5m0 0-2 2m2-2 2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="upload-copy"><strong id="fileName">Choose a report to upload</strong><span id="fileHint">Select a PDF from your device</span></span>
+            <span class="browse-label">Browse</span>
+          </label>
+          <div class="upload-footer"><span class="helper-text">Text-based PDFs work best. Scanned reports may need OCR.</span><button class="button-primary" id="uploadButton" type="button">Ingest report <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+          <p class="inline-status" id="uploadStatus" role="status" aria-live="polite"></p>
+        </section>
 
-function renderSources(sources) {
-  const box = $('sources');
-  box.replaceChildren();
-  sources.forEach((s) => {
-    const d = document.createElement('div');
-    d.className = 'src';
-    d.textContent = `[${s.id}] ${s.source}, p.${s.page}, ${s.heading}`;
-    box.appendChild(d);
-  });
-}
+        <section class="card workflow-card question-card" aria-labelledby="questionTitle">
+          <div class="card-heading">
+            <span class="step-number" aria-hidden="true">02</span>
+            <div><h2 class="card-title" id="questionTitle">Ask your documents</h2><p class="card-description">Answers stay grounded in the passages we retrieve.</p></div>
+          </div>
+          <form id="questionForm">
+            <label for="question" class="helper-text" style="display:block;margin:0 0 7px;color:var(--muted);font-size:11px">Your question</label>
+            <textarea class="question-input" id="question" name="question" minlength="3" placeholder="For example: What return period does the flood map use?" required></textarea>
+            <div class="query-controls">
+              <label class="mode-control" for="mode"><span>Retrieval</span><select class="mode-select" id="mode" name="mode"><option value="hybrid_rerank">Hybrid + reranking</option><option value="hybrid">Hybrid search</option><option value="dense">Semantic search</option></select></label>
+              <button class="button-primary ask-button" id="askButton" type="submit">Ask question <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+          </form>
+          <p class="query-status" id="queryStatus" role="status" aria-live="polite"></p>
+        </section>
 
-async function plot(text) {
-  const res = await postJson('/places', {text});
-  if (!res.ok) return;
-  const {places} = await res.json();
-  const pts = places.map((p) => {
-    const el = document.createElement('div');
-    el.textContent = p.name;  // textContent: place names come from an LLM
-    L.marker([p.lat, p.lon]).bindPopup(el).addTo(markers);
-    return [p.lat, p.lon];
-  });
-  if (pts.length) map.fitBounds(pts, {maxZoom: 8, padding: [30, 30]});
-}
+        <section class="card answer-card" id="answerCard" aria-labelledby="answerTitle" hidden>
+          <div class="answer-top"><h2 class="answer-heading" id="answerTitle"><span class="answer-mark" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m3.3 8.1 3 3 6.4-6.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Answer</h2><span class="grounded-tag" id="groundedLabel">Document-grounded</span></div>
+          <p class="answer-text" id="answerText"></p>
+          <div id="sourcesWrap"><h3 class="source-heading">Cited passages</h3><div class="source-list" id="sources"></div></div>
+        </section>
+      </section>
 
-async function ask() {
-  const question = $('q').value.trim();
-  if (question.length < 3) return;
-  setStatus('Thinking...');
-  markers.clearLayers();
-  try {
-    const res = await postJson('/query', {question, mode: $('mode').value});
-    if (!res.ok) { setStatus(`Error ${res.status}`); return; }
-    const data = await res.json();
-    $('answer').textContent = data.answer;
-    renderSources(data.sources);
-    if (data.sources.length) { setStatus('Locating places...'); await plot(data.answer); }
-    setStatus('');
-  } catch (e) {
-    setStatus('Request failed');
-  }
-}
+      <aside class="map-column" aria-label="Geographic context">
+        <section class="card map-card" aria-labelledby="mapTitle">
+          <div class="map-card-header">
+            <div><h2 class="map-title" id="mapTitle">Geographic context</h2><p class="map-description">Places mentioned in supported answers.</p></div>
+            <span class="map-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-6.15 7-12a7 7 0 1 0-14 0c0 5.85 7 12 7 12Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/></svg></span>
+          </div>
+          <div class="map-frame">
+            <div id="map" role="img" aria-label="Map showing places found in the answer"></div>
+            <div class="map-empty" id="mapEmpty"><span class="map-empty-pin" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M10 17s5.5-4.7 5.5-9.2a5.5 5.5 0 1 0-11 0C4.5 12.3 10 17 10 17Z" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="7.8" r="1.8" stroke="currentColor" stroke-width="1.5"/></svg></span><strong>Map context will appear here</strong><span>Ask a question to locate places supported by your reports.</span></div>
+          </div>
+          <p class="map-status" id="mapStatus" role="status" aria-live="polite">Ready for a location-based answer</p>
+          <div class="map-attribution"><span>Map data © OpenStreetMap contributors</span><strong>Evidence first · places second</strong></div>
+        </section>
+      </aside>
+    </main>
 
-async function upload() {
-  const file = $('file').files[0];
-  if (!file) return;
-  setStatus('Ingesting...');
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await fetch('/ingest', {method: 'POST', body: fd});
-    const d = await res.json();
-    setStatus(res.ok ? `Ingested ${d.chunks} chunks from ${d.source}` : 'Upload failed');
-  } catch (e) {
-    setStatus('Upload failed');
-  }
-}
+    <footer class="footer"><span class="footer-note"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.7 13 3.5v3.8c0 3.2-2.1 5.4-5 7-2.9-1.6-5-3.8-5-7V3.5l5-1.8Z" stroke="currentColor" stroke-width="1.3"/><path d="m5.7 7.8 1.5 1.5 3.2-3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Answers are based on retrieved report passages.</span><span>GeoDocs Assistant</span></footer>
+  </div>
 
-$('ask').addEventListener('click', ask);
-$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
-$('upload').addEventListener('click', upload);
-</script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const apiStatus = $('serviceStatus');
+    let map;
+    let markers;
+
+    if (window.L) {
+      map = L.map('map', { scrollWheelZoom: false, zoomControl: true }).setView([18, 4], 2);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      markers = L.layerGroup().addTo(map);
+    } else {
+      $('mapStatus').textContent = 'Map tiles could not load. Check your network connection.';
+    }
+
+    async function checkApi() {
+      try {
+        const response = await fetch('/health');
+        if (!response.ok) throw new Error('API unavailable');
+        apiStatus.classList.add('online');
+        $('serviceLabel').textContent = 'Service online';
+      } catch (error) {
+        apiStatus.classList.add('offline');
+        $('serviceLabel').textContent = 'Service unavailable';
+      }
+    }
+
+    function setStatus(element, message, state = '') {
+      element.textContent = message;
+      element.className = `inline-status ${state}`.trim();
+    }
+
+    function showError(element, message) {
+      element.textContent = message;
+      element.className = 'inline-status error';
+    }
+
+    $('file').addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      $('fileName').textContent = file.name;
+      $('fileHint').textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB · Ready to ingest`;
+      $('uploadZone').classList.add('has-file');
+      setStatus($('uploadStatus'), '');
+    });
+
+    $('uploadButton').addEventListener('click', async () => {
+      const file = $('file').files[0];
+      if (!file) {
+        showError($('uploadStatus'), 'Choose a PDF report first.');
+        return;
+      }
+      const button = $('uploadButton');
+      const form = new FormData();
+      form.append('file', file);
+      button.disabled = true;
+      button.textContent = 'Ingesting…';
+      setStatus($('uploadStatus'), 'Reading and indexing report…');
+      try {
+        const response = await fetch('/ingest', { method: 'POST', body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || `Upload failed (${response.status})`);
+        setStatus($('uploadStatus'), `${data.chunks} passages indexed from ${data.source}.`, 'success');
+      } catch (error) {
+        showError($('uploadStatus'), error.message || 'Could not ingest this report.');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = 'Ingest report <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+    });
+
+    function renderSources(sources) {
+      const list = $('sources');
+      list.replaceChildren();
+      $('sourcesWrap').hidden = sources.length === 0;
+      for (const source of sources) {
+        const item = document.createElement('article');
+        item.className = 'source-item';
+        const meta = document.createElement('div');
+        meta.className = 'source-meta';
+        const id = document.createElement('span');
+        id.className = 'source-id';
+        id.textContent = source.id;
+        const title = document.createElement('span');
+        title.textContent = `${source.source} · p. ${source.page} · ${source.heading}`;
+        meta.append(id, title);
+        item.appendChild(meta);
+        if (source.snippet) {
+          const snippet = document.createElement('p');
+          snippet.className = 'source-snippet';
+          snippet.textContent = source.snippet;
+          item.appendChild(snippet);
+        }
+        list.appendChild(item);
+      }
+    }
+
+    async function locatePlaces(answer) {
+      if (!map || !markers) return;
+      markers.clearLayers();
+      $('mapEmpty').hidden = false;
+      $('mapStatus').textContent = 'Looking for places in the answer…';
+      const response = await fetch('/places', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: answer })
+      });
+      if (!response.ok) throw new Error('Place lookup unavailable');
+      const { places } = await response.json();
+      if (!places.length) {
+        $('mapStatus').textContent = 'No mappable places found in this answer.';
+        return;
+      }
+      const points = [];
+      for (const place of places) {
+        const popup = document.createElement('span');
+        popup.textContent = place.name;
+        L.marker([place.lat, place.lon]).bindPopup(popup).addTo(markers);
+        points.push([place.lat, place.lon]);
+      }
+      $('mapEmpty').hidden = true;
+      map.fitBounds(points, { maxZoom: 8, padding: [32, 32] });
+      $('mapStatus').textContent = `${places.length} place${places.length === 1 ? '' : 's'} found in the answer.`;
+    }
+
+    $('questionForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const question = $('question').value.trim();
+      if (question.length < 3) return;
+      const button = $('askButton');
+      button.disabled = true;
+      button.textContent = 'Searching…';
+      $('answerCard').hidden = false;
+      $('answerText').textContent = '';
+      renderSources([]);
+      setStatus($('queryStatus'), 'Retrieving supporting passages…');
+      if (map && markers) markers.clearLayers();
+      $('mapEmpty').hidden = false;
+      $('mapStatus').textContent = 'Waiting for a supported answer';
+      try {
+        const response = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, mode: $('mode').value })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+        $('answerText').textContent = data.answer;
+        renderSources(data.sources || []);
+        $('groundedLabel').textContent = data.sources && data.sources.length ? 'Document-grounded' : 'No supporting passages';
+        setStatus($('queryStatus'), 'Answer ready. Review its cited passages below.');
+        if (data.sources && data.sources.length) {
+          try {
+            await locatePlaces(data.answer);
+          } catch (error) {
+            $('mapStatus').textContent = 'Answer is ready; place lookup is unavailable.';
+          }
+        } else {
+          $('mapStatus').textContent = 'A map appears when an answer has supporting passages.';
+        }
+      } catch (error) {
+        showError($('queryStatus'), error.message || 'Could not reach the assistant.');
+        $('answerCard').hidden = true;
+      } finally {
+        button.disabled = false;
+        button.innerHTML = 'Ask question <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+    });
+
+    checkApi();
+  </script>
 </body>
 </html>
